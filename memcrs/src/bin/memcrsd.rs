@@ -2,7 +2,6 @@ use byte_unit::{Byte, ByteUnit};
 use log::{debug, info};
 use std::net::{IpAddr, SocketAddr};
 use std::process;
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::runtime::Builder;
 
@@ -88,8 +87,16 @@ fn main() {
                 .help("number of runtimes to use, each runtime will have n number of threads")
                 .takes_value(true),
         )
+        .arg(
+            Arg::new("sqpoll-idle")
+                .long("sqpoll-idle")
+                .default_value("-1")
+                .help("the value of sq_thread_idle, -1 means SQ POLL is disabled, unit: milliseconds")
+                .takes_value(true),
+        )
         .get_matches_mut();
 
+    let sqpoll_idle: i32 = matches.value_of_t("sqpoll-idle").unwrap_or_else(|e| e.exit());
     let port: u16 = matches.value_of_t("port").unwrap_or_else(|e| e.exit());
     let connection_limit: u32 = matches.value_of_t("conn-limit").unwrap_or_else(|e| e.exit());
 
@@ -112,7 +119,7 @@ fn main() {
     }
 
     let runtimes: u32 = matches.value_of_t("runtimes").unwrap_or_else(|e| e.exit());
-    
+
     let listen_address = matches
         .value_of("listen")
         .unwrap()
@@ -179,6 +186,8 @@ fn main() {
     );
 
     let addr = SocketAddr::new(listen_address, port);
+    /*
+    use std::sync::atomic::{AtomicUsize, Ordering};
     for i in 0..runtimes {
         let store = Arc::clone(&memcache_store);
         std::thread::spawn(move || {
@@ -190,8 +199,26 @@ fn main() {
     }
     let parent_runtime = create_runtime();
     parent_runtime.block_on(system_timer.run())
+    */
+
+    let mut builder = Builder::new_multi_thread();
+    builder.uring_entries(32768).worker_threads(runtimes as usize).enable_all();
+    if sqpoll_idle >= 0 {
+        builder.uring_sq_thread_idle(sqpoll_idle as u32);
+    }
+    let rt = builder.build().unwrap();
+    debug!("create runtime");
+    rt.spawn(async move {
+        system_timer.run().await;
+    });
+    rt.block_on(rt.spawn(async move {
+        let mut tcp_server = memcrs::server::memc_tcp::MemcacheTcpServer::new(config, memcache_store);
+        tcp_server.run(addr).await.unwrap();
+    })).unwrap();
+    return;
 }
 
+/*
 fn create_runtime() -> tokio::runtime::Runtime {
     let runtime = Builder::new_current_thread()
         //.worker_threads(threads as usize)
@@ -207,3 +234,4 @@ fn create_runtime() -> tokio::runtime::Runtime {
         .unwrap();
     runtime
 }
+*/

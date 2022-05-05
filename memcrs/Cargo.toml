@@ -32,7 +32,10 @@ tracing = "0.1.31"
 tracing-attributes = "0.1.19"
 tracing-log = "0.1.2"
 tracing-subscriber = "0.3.9"
-tokio = { version = "1.17.0", features = ["full"] }
+# enable kbio
+tokio = { path = "/root/project/kbio/tokio", features = ["fs", "io-util", "io-std", "macros", "net", "parking_lot", "rt", "rt-multi-thread", "sync", "time", "kbio"] }
+# disable kbio
+#tokio = { path = "/root/project/kbio/tokio", features = ["fs", "io-util", "io-std", "macros", "net", "parking_lot", "rt", "rt-multi-thread", "sync", "time",] }
 tokio-util = { version = "0.7.0", features = ["full"] }
 
 [target.'cfg(not(target_env = "msvc"))'.dependencies]
